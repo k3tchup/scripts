@@ -37,14 +37,15 @@ GRAPHITE_HOST=localhost
 GRAPHITE_PORT=2003
 GRAPHITE_PATH=path.to.carbon.$(hostname | cut -d '.' -f 1)
 TIME=`date +%s`
-for l in `
+exec 3<>/dev/tcp/localhost/11211
 (
     sleep 1
     [ "$argument" == "extended" ] && echo "stats slabs" && echo "stats items"
     echo "stats"
     sleep 1
     echo "quit"
-) | telnet localhost 11211 2>/dev/null |
+) >&3
+cat <&3 |
 grep STAT |
 grep -v version |
 sed -re 's/STAT (items:)?([0-9]+):/memcache.slabs.\2./' \
