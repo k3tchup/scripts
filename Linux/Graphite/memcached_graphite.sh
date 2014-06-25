@@ -37,6 +37,8 @@ GRAPHITE_HOST=localhost
 GRAPHITE_PORT=2003
 GRAPHITE_PATH=path.to.carbon.$(hostname | cut -d '.' -f 1)
 TIME=`date +%s`
+
+for l in `
 exec 3<>/dev/tcp/localhost/11211
 (
     sleep 1
