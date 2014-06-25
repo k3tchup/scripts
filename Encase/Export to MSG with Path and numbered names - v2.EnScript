@@ -1,0 +1,233 @@
+/*
+    This EnScript will export Records to MSG files while preserving full directory structure and using numbered filenames.
+    The export functionality in EnCase only preserves directory structure within the email container.
+
+    MD5 names are used if case has been hashed.  Otherwise, 128 bit numberes are generated.
+*/
+
+class MainClass {
+  String Desc, ExportDir;
+  String StatusBarName;
+  SearchClass Search;
+  KeywordClass Keywords;
+
+
+
+  MainClass() :
+    StatusBarName = "Exporting to MSG..."
+  {
+  }
+
+
+
+  class MyDialog: DialogClass {
+
+    String          Desc;
+    ButtonClass     _Help;
+    StringEditClass   _ExportDir;
+
+
+    MyDialog(MainClass m):
+    Desc(     "Author: Dmitry Akselrod\n\n"
+              "This script exports Records to MSG format.\n"
+              "Complete folder path is preserved.\n"
+              "Numbered filenames are used.\n\n"
+              "If MD5 Hash values are available, they are used for file names.\n"
+              "Otherwise a sequential 128 bit number is generated."
+             );
+
+      DialogClass(MainWindow, "Export to MSG"),
+      _Help(this, "Help", START, START, 15, 10, 0),
+     _ExportDir(this, "Export Directory", START, NEXT, 200, 12, 0, m.ExportDir, 500, PathEditClass::REQUIRED | PathEditClass::FOLDEROPEN)
+    {
+    }
+
+
+    virtual void CheckControls() {
+    }
+
+    virtual void ChildEvent(const EventClass &event) {
+
+      if (_Help.Matches(event))
+        SystemClass::Message(SystemClass::MBOK, "Help", Desc);
+      DialogClass::ChildEvent(event);
+    }
+
+    virtual bool CanClose() {
+      return true;
+    }
+  }
+
+
+
+
+
+  void Main(CaseClass c) {
+    if (!c) {
+      SystemClass::Message(SystemClass::OK, "Error", "This EnScript requires an open case.");
+      return;
+    }
+
+    SystemClass::ClearConsole(SystemClass::SHOWCONSOLE);
+    MyDialog dialogbox(this);
+    Desc = dialogbox.Desc;
+    EntryClass e;
+    EmailClass email;
+    HashClass md5;
+    String sMD5, sFilename;
+    long i = 1;
+    long totalRecs = 0;
+    long success = 0;
+    long failure = 0;
+    bool result = false;
+    if (dialogbox.Execute() == SystemClass::OK){
+
+      if (ExportDir.Compare("") == 0){
+        SystemClass::Message(SystemClass::OK, "Error", "You must specify a path.");
+        return;
+      }
+
+      Console.WriteLine("Getting selection counts for progress output...");
+
+      //progres bar initialization
+      SystemClass::StatusRange(StatusBarName, 0); //init progress bar
+      forall (RecordClass rec in c.RecordRoot()) {
+        if (rec.IsSelected() && rec.IsEmail() && (!rec.IsAttachment()))
+          totalRecs++;
+      }
+      SystemClass::StatusRange(StatusBarName, totalRecs);
+
+      Console.WriteLine("Began exporting a total of " + totalRecs + " messages..");
+
+      forall (RecordClass rec in c.RecordRoot()) {
+      if (rec.IsSelected() && rec.IsEmail() && (!rec.IsAttachment())) {
+         //Console.WriteLine(String::FormatInt(i, int::HEX, 0, 32) + " Name:" + rec.Name());
+         email = EmailClass::TypeCast(rec);
+         e = rec.GetEntry();
+         String path = e.FullPath();
+
+         //Set the Filename.  If hash exists, then use it. If not, use incremental values.
+         md5 = e.HashValue();
+         sMD5 = md5;
+         if (sMD5.GetLength() == 32) {
+            sFilename = sMD5;
+         }
+         else {
+            sFilename = String::FormatInt(i, int::HEX, 0, 32);
+         }
+
+
+         //Clean up the path. Remove illegal chars and the name of the email
+         path.Replace("\\Body_html","", (path.GetLength() - 10 ));
+         path.Replace("\\Body", "", (path.GetLength() - 5));
+         path.Replace("\\PR_HTML", "", (path.GetLength() - 8));
+         path.Replace("\\PR_BODY", "", (path.GetLength() - 8));
+         path.Replace("\\PR_RTF_COMPRESSED", "", (path.GetLength() - 18));
+
+         path.Replace(rec.Name(), "", (path.GetLength() - rec.Name().GetLength())); //need to only replace at the end!!
+
+         path.Replace("/", "_");
+         path.Replace(":", "_", 3);
+         path.Replace("*", "_");
+         path.Replace("?", "_");
+         path.Replace("<", "_");
+         path.Replace(">", "_");
+         path.Replace("|", "_");
+         path.Replace(" \\", "_\\");
+         path.Replace("  \\", "_\\");
+         path.BuildPath(ExportDir, path);
+         
+         //Create folder structure
+         result = LocalMachine.CreateFolder(path, ConnectionClass::NOTIFYSHELL | ConnectionClass::CREATEFOLDERALL);
+         if (!result){
+           failure++;
+           Console.WriteLine("**Error: failed to create destination directory: \n" + path);
+           path.BuildPath(path, sFilename, ".msg");
+           Console.WriteLine("Failed: " + path);
+           //break;
+         }
+         else { 
+
+           //path.BuildPath(path, rec.Name(), ".msg");
+           path.BuildPath(path, sFilename, ".msg");
+  
+  
+           //Export to MSG
+           result = rec.ExportMessage(path);
+           if (result) {
+             success++;
+             //Console.WriteLine("Exported: " + path);  // UNCOMMENT THIS LINE FOR DEBUGGING
+           }
+           else {
+             //Deal with duplicates (probably a crappy way of doing it, but it works)
+             long di = 0;
+             String newPath = path;
+             for (di = 1; di <= totalRecs; di++) {
+               //append a numeric val to the end of the file name
+               newPath=path;
+               newPath.Replace(".msg", "", newPath.GetLength() - 4);
+               newPath = newPath + "_" + String::FormatInt(di, int::HEX, 0, 0) + ".msg";
+               result=result = rec.ExportMessage(newPath);
+               if(result)
+               {
+                 success++;
+                 break;
+               }
+             }
+             if(!result){
+               failure++;
+               Console.WriteLine("Failed: " + path);   // UNCOMMENT THIS LINE FOR DEBUGGING
+             }
+           }
+           
+         }
+         i++;
+         SystemClass::StatusInc(1);
+
+       }
+      }
+    }
+    i--; // (started with a non-zero counter)
+    Console.WriteLine("Procesed " + i + " messages.");
+    Console.WriteLine("Successfully exported: " + success + " messages.");
+    if (failure > 0)
+        Console.WriteLine("Failed to export: " + failure + " messages.");
+    SystemClass::Message(SystemClass::OK, "Finished", "Finished Exporting.");
+
+    /*
+    long records = 0;
+    long emails = 0;
+    long attachments = 0;
+    long folders = 0;
+    long selected = 0;
+    forall (RecordClass rec in c.RecordRoot()) {
+
+
+      if (rec.IsSelected())
+      {
+        if (rec.IsFolder())
+          folders++;
+        if (rec.IsEmail())
+          emails++;
+        if (rec.IsAttachment())
+          attachments++;
+
+        selected++;
+      }
+      records++;
+    }
+    Console.WriteLine("Records: " + records);
+    Console.WriteLine("Emails: " + emails);
+    Console.WriteLine("Attachments: " + attachments);
+    Console.WriteLine("Folders: " + folders);
+    Console.WriteLine("Selected: " + selected);
+    */
+
+  }
+}
+
+
+
+
+
+

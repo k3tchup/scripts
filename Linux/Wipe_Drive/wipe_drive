@@ -1,0 +1,60 @@
+#!/bin/bash
+#
+# This program wipes a hard drive with random hex characters
+# You can specify the number of passes to wipe
+#
+# The program uses dcfldd, which must be installed
+#
+echo "................................................."
+echo "This program wipes a designated hard drive with"
+echo "configurable number of passes."
+echo "It uses dcfldd, which must be installed prior."
+echo "................................................."
+ddrive="/dev/hda"
+numpasses=10
+echo "Specify the drive to wipe (/dev/hda): "
+read ddrive
+echo "Specify number of passes (10): "
+read numpasses
+echo "Should I write random characters to drive after wiping? (Y): "
+read randomwipe
+
+if [ "$ddrive" = "" ]; then
+	echo "you must specify a drive to wipe!"
+	exit 1
+fi
+if [ "$((numpasses))" -lt 1 ]; then
+	echo "number of passes must be at least 1!"
+	exit 1
+fi
+if [ "$randomwipe" = "" ]; then
+	randomwipe="Y"
+fi
+
+dcKB=`fdisk -s $ddrive`
+export dcKB
+dcMB=`expr $((dcKB)) / 1024`
+echo "$ddrive capacity is $dcMB MB."
+echo "Wiping $ddrive with $numpasses passes. This may take some time."
+
+for (( i = 1;i<$((numpasses + 1));i++ )); do
+	echo "Making wiping pass #$i..."
+	if [ "$randomwipe" = "Y" ]; then
+		dcfldd if=/dev/urandom of=$ddrive && dcfldd if=/dev/zero of=$ddrive
+	fi
+	if [ "$randomwipe" = "N" ]; then
+		dcfldd if=/dev/zero of=$ddrive
+
+	fi
+done
+if [ "$?" = "0" ]; then #successful return code
+	echo "Finished wiping $ddrive"
+	exit 0
+else
+	echo "Wiping $ddrive produced errors, see above."
+	exit 1
+fi
+exit 0
+
+
+
