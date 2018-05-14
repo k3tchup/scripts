@@ -1,0 +1,10 @@
+# /etc/acpi/events/lm-lid
+# This is called when a the lid is closed or open 
+# /etc/acpi/ac-power.sh for further processing.
+
+# Optionally you can specify the placeholder %e. It will pass
+# through the whole kernel event message to the program you've
+# specified.
+
+event=button/lid.*
+action=/etc/acpi/ac-power.sh %e
